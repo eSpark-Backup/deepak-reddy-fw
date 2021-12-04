@@ -21,11 +21,10 @@ Each task has its own priortity defined that is basically a measure of how frequ
 
 #### Task Names and Priorty
 
-	Task Names									Priority
-1. OTA over HTTPS						To be executed once every hour
-2. Health Parameter Update				To be executed once every minute
-3. Schedule download and Store Task 	To be executed once every day
-4. Time Sync Task 						To be executed once every day
+1. OTA over HTTPS (To be executed once every hour)
+2. Health Parameter Update (To be executed once every minute)
+3. Schedule download and Store Task (To be executed once every day)
+4. Time Sync Task (To be executed once every day)
 
 ##### OTA over HTTPS Task
 
@@ -44,6 +43,7 @@ All the data of these tasks will be fetched and pushed to a topic on AWS over MQ
 ##### Schedule Download and Store Task
 
 This task will involve donwloading a JSON Schedule from AWS over MQTT. The schedule will be stored in the ESP32 EEPROM / SPIFFS. A basic look of schedule will be:
+
 {"Schedule" : Schdule01 ["ChannelID" : 100, "Day" : "Monday", "Start Time(epoch)" : 1625203013, "Duration(minutes)" : 60, "ConfigON" : 1121, "ConfigOFF" : 1020], Schdule02 ["ChannelID" : 100, "Day" : "Tuesday", "Start Time(epoch)" : 1625203013, "Duration(minutes)" : 60, "ConfigON" : 1121, "ConfigOFF" : 1020]}
 
 1. There can be two channel IDs
