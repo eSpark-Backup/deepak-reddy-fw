@@ -1,0 +1,5 @@
+source "C:/Users/MK/Desktop/esp-idf/components/app_update/Kconfig.projbuild"
+source "C:/Users/MK/Desktop/esp-idf/components/bootloader/Kconfig.projbuild"
+source "C:/Users/MK/Desktop/esp-idf/components/esptool_py/Kconfig.projbuild"
+source "C:/Users/MK/Desktop/esp-idf/components/partition_table/Kconfig.projbuild"
+source "E:/repo/esp-idf/examples/wifi/esp-aws-iot/examples/subscribe_publish/main/Kconfig.projbuild"
