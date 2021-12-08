@@ -9,6 +9,7 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_http_client.h"
+#include "esp_sntp.h"
 
 
 #define led_pin GPIO_NUM_2
@@ -38,6 +39,9 @@ static const char *TAG = "wifi station";
 #define EXAMPLE_ESP_MAXIMUM_RETRY  5
 
 static int s_retry_num = 0;
+
+static void obtain_time(void);
+static void initialize_sntp(void);
 
 static void event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data)
@@ -228,6 +232,79 @@ void getJSON()
 
 }
 
+void getTime()
+{
+	while(1)
+	{
+	    char strftime_buf[64];
+
+		printf("Update Time\n");
+	    time_t now;
+	    struct tm timeinfo;
+	    time(&now);
+	    localtime_r(&now, &timeinfo);
+
+	    obtain_time();
+	    // update 'now' variable with current time
+	    time(&now);
+
+	    ESP_LOGI(TAG, "Year = %d, Month = %d, Day = %d", timeinfo.tm_year, timeinfo.tm_mon, timeinfo.tm_mday);
+
+	    // Set timezone and print local time
+	    setenv("TZ", "UTC-5", 1);
+	    tzset();
+	    localtime_r(&now, &timeinfo);
+	    strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
+	    ESP_LOGI(TAG, "The current date/time in Pakistan is: %s", strftime_buf);
+
+		vTaskDelay(10000 / portTICK_PERIOD_MS);
+	}
+
+}
+
+static void obtain_time(void)
+{
+    /*ESP_ERROR_CHECK( nvs_flash_init() );
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK( esp_event_loop_create_default() );*/
+
+    /* This helper function configures Wi-Fi or Ethernet, as selected in menuconfig.
+     * Read "Establishing Wi-Fi or Ethernet Connection" section in
+     * examples/protocols/README.md for more information about this function.
+     */
+
+    // wait for time to be set
+    time_t now = 0;
+    struct tm timeinfo = { 0 };
+    int retry = 0;
+    const int retry_count = 10;
+    while (sntp_get_sync_status() == SNTP_SYNC_STATUS_RESET && ++retry < retry_count) {
+        ESP_LOGI(TAG, "Waiting for system time to be set... (%d/%d)", retry, retry_count);
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+    }
+    time(&now);
+    localtime_r(&now, &timeinfo);
+
+}
+
+void time_sync_notification_cb(struct timeval *tv)
+{
+    ESP_LOGI(TAG, "Notification of a time synchronization event");
+}
+
+static void initialize_sntp(void)
+{
+    ESP_LOGI(TAG, "Initializing SNTP");
+    sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    sntp_setservername(0, "pool.ntp.org");
+    sntp_set_time_sync_notification_cb(time_sync_notification_cb);
+#ifdef CONFIG_SNTP_TIME_SYNC_METHOD_SMOOTH
+    sntp_set_sync_mode(SNTP_SYNC_MODE_SMOOTH);
+#endif
+    sntp_init();
+}
+
+
 void app_main(void)
 {
     nvs_flash_init();
@@ -236,6 +313,8 @@ void app_main(void)
     wifi_init_sta();
 
     esp_netif_init();
+
+    initialize_sntp();
 
     gpio_set_direction(led_pin, GPIO_MODE_OUTPUT);
 
@@ -251,10 +330,19 @@ void app_main(void)
                 NULL,         // Task handle
                 app_cpu);     // Run on one core for demo purposes (ESP32 only)
 
-    xTaskCreatePinnedToCore(  // Use xTaskCreate() in vanilla FreeRTOS
+    /*xTaskCreatePinnedToCore(  // Use xTaskCreate() in vanilla FreeRTOS
     		     getJSON,  // Function to be called
                 "Get Response",   // Name of task
                 4096,         // Stack size (bytes in ESP32, words in FreeRTOS)
+                NULL,         // Parameter to pass to function
+                0,            // Task priority (0 to configMAX_PRIORITIES - 1)
+                NULL,         // Task handle
+                app_cpu);     // Run on one core for demo purposes (ESP32 only)*/
+
+    xTaskCreatePinnedToCore(  // Use xTaskCreate() in vanilla FreeRTOS
+    		     getTime,  // Function to be called
+                "Get Time",   // Name of task
+                1024 * 2,         // Stack size (bytes in ESP32, words in FreeRTOS)
                 NULL,         // Parameter to pass to function
                 0,            // Task priority (0 to configMAX_PRIORITIES - 1)
                 NULL,         // Task handle
