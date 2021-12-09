@@ -10596,7 +10596,7 @@
                         "name": "ESP32_RTC_CLK_CAL_CYCLES",
                         "range": [
                             0,
-                            32766
+                            27000
                         ],
                         "title": "Number of cycles for RTC_SLOW_CLK calibration",
                         "type": "int"
