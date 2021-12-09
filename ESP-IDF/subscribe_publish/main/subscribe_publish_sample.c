@@ -179,7 +179,7 @@ void advanced_ota_example_task(void *pvParameter)
 
     esp_err_t ota_finish_err = ESP_OK;
     esp_http_client_config_t config = {
-        .url = "https://192.168.18.60:8070/firmware.bin",
+        .url = "https://192.168.18.60:8070/app-template.bin",
         .cert_pem = (char *)server_cert_pem_start,
         .timeout_ms = 5000,
         .keep_alive_enable = true,
