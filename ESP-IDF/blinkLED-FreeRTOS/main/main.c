@@ -34,11 +34,14 @@ static const char *TAG = "wifi station";
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 
-#define EXAMPLE_ESP_WIFI_SSID      "StormFiber-2.4G"
-#define EXAMPLE_ESP_WIFI_PASS      "47779884"
+#define EXAMPLE_ESP_WIFI_SSID      "DevSol Pakistan"
+#define EXAMPLE_ESP_WIFI_PASS      "47356880"
 #define EXAMPLE_ESP_MAXIMUM_RETRY  5
 
 static int s_retry_num = 0;
+extern const char ca_cert_pem_start[] asm("_binary_ca_cert_pem_start");
+extern const char ca_cert_pem_end[]   asm("_binary_ca_cert_pem_end");
+
 
 static void obtain_time(void);
 static void initialize_sntp(void);
@@ -204,12 +207,11 @@ void getJSON()
 		esp_http_client_method_t method_get = HTTP_METHOD_GET;
 		char buffer_res[] = {0};
 
-		esp_http_client_config_t config = {
-		   .url = "http://jsonplaceholder.typicode.com/todos/1",
-		   .event_handler = _http_event_handle,
-		   .method = method_get,
-		   .port = HTTP_TRANSPORT_OVER_TCP
-		};
+	    esp_http_client_config_t config = {
+	        .url = "https://esp-idf-bucket.s3.us-west-1.amazonaws.com/test.txt",
+	        .event_handler = _http_event_handle,
+	        .cert_pem = ca_cert_pem_start,
+	    };
 
 		esp_http_client_handle_t client = esp_http_client_init(&config);
 
@@ -330,23 +332,23 @@ void app_main(void)
                 NULL,         // Task handle
                 app_cpu);     // Run on one core for demo purposes (ESP32 only)
 
-    /*xTaskCreatePinnedToCore(  // Use xTaskCreate() in vanilla FreeRTOS
+    xTaskCreatePinnedToCore(  // Use xTaskCreate() in vanilla FreeRTOS
     		     getJSON,  // Function to be called
                 "Get Response",   // Name of task
                 4096,         // Stack size (bytes in ESP32, words in FreeRTOS)
                 NULL,         // Parameter to pass to function
                 0,            // Task priority (0 to configMAX_PRIORITIES - 1)
                 NULL,         // Task handle
-                app_cpu);     // Run on one core for demo purposes (ESP32 only)*/
+                app_cpu);     // Run on one core for demo purposes (ESP32 only)
 
-    xTaskCreatePinnedToCore(  // Use xTaskCreate() in vanilla FreeRTOS
+    /*xTaskCreatePinnedToCore(  // Use xTaskCreate() in vanilla FreeRTOS
     		     getTime,  // Function to be called
                 "Get Time",   // Name of task
                 1024 * 2,         // Stack size (bytes in ESP32, words in FreeRTOS)
                 NULL,         // Parameter to pass to function
                 0,            // Task priority (0 to configMAX_PRIORITIES - 1)
                 NULL,         // Task handle
-                app_cpu);     // Run on one core for demo purposes (ESP32 only)
+                app_cpu);     // Run on one core for demo purposes (ESP32 only)*/
 
     // Task to run forever
 //    xTaskCreatePinnedToCore(  // Use xTaskCreate() in vanilla FreeRTOS
