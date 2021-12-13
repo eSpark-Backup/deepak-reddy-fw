@@ -10,6 +10,8 @@
 #include "esp_log.h"
 #include "esp_http_client.h"
 #include "esp_sntp.h"
+#include "string.h"
+#include "stdlib.h"
 
 
 #define led_pin GPIO_NUM_2
@@ -169,6 +171,9 @@ void wifi_init_sta(void)
 
 esp_err_t _http_event_handle(esp_http_client_event_t *evt)
 {
+    static char *output_buffer;  // Buffer to store response of http request from event handler
+    static int output_len = 0;       // Stores number of bytes read
+
     switch(evt->event_id) {
         case HTTP_EVENT_ERROR:
             ESP_LOGI(TAG, "HTTP_EVENT_ERROR");
@@ -181,20 +186,45 @@ esp_err_t _http_event_handle(esp_http_client_event_t *evt)
             break;
         case HTTP_EVENT_ON_HEADER:
             ESP_LOGI(TAG, "HTTP_EVENT_ON_HEADER");
-            printf("%.*s", evt->data_len, (char*)evt->data);
+            //printf("%.*s", evt->data_len, (char*)evt->data);
             break;
         case HTTP_EVENT_ON_DATA:
             ESP_LOGI(TAG, "HTTP_EVENT_ON_DATA, len=%d", evt->data_len);
+            /*
+             *  Check for chunked encoding is added as the URL for chunked encoding used in this example returns binary data.
+             *  However, event handler can also be used in case chunked encoding is used.
+             */
             if (!esp_http_client_is_chunked_response(evt->client)) {
-                printf("%.*s", evt->data_len, (char*)evt->data);
+                // If user_data buffer is configured, copy the response into the buffer
+                if (evt->user_data) {
+
+                    memcpy(evt->user_data + output_len * sizeof(char), evt->data, evt->data_len);
+                    /*printf("Data\n");
+                    printf("%s\n", (char*)evt->data);*/
+                }
+//                } else {
+//                    if (output_buffer == NULL) {
+//                        output_buffer = (char *) malloc(esp_http_client_get_content_length(evt->client));
+//                        output_len = 0;
+//                        if (output_buffer == NULL) {
+//                            ESP_LOGE(TAG, "Failed to allocate memory for output buffer");
+//                            return ESP_FAIL;
+//                        }
+//                    }
+//                    memcpy(output_buffer + output_len, evt->data, evt->data_len);
+//                }
+                output_len += evt->data_len;
             }
 
             break;
         case HTTP_EVENT_ON_FINISH:
             ESP_LOGI(TAG, "HTTP_EVENT_ON_FINISH");
+            output_len = 0;
+            printf("%s\n", (char *)evt->user_data);
             break;
         case HTTP_EVENT_DISCONNECTED:
             ESP_LOGI(TAG, "HTTP_EVENT_DISCONNECTED");
+            output_len = 0;
             break;
     }
     return ESP_OK;
@@ -204,27 +234,39 @@ void getJSON()
 {
 	while(1)
 	{
-		esp_http_client_method_t method_get = HTTP_METHOD_GET;
-		char buffer_res[] = {0};
+	    static char local_response_buffer[2000] = {0};
 
 	    esp_http_client_config_t config = {
-	        .url = "https://esp-idf-bucket.s3.us-west-1.amazonaws.com/test.txt",
+	        .url = "https://esp-idf-bucket.s3.us-west-1.amazonaws.com/hello.txt",
 	        .event_handler = _http_event_handle,
 	        .cert_pem = ca_cert_pem_start,
+			.method = HTTP_METHOD_GET,
+			.user_data = local_response_buffer,
+			.buffer_size = 1024,
 	    };
 
 		esp_http_client_handle_t client = esp_http_client_init(&config);
+	    //esp_err_t err = esp_http_client_open(client, 0);
 
 		esp_err_t err = esp_http_client_perform(client);
 
 		if (err == ESP_OK) {
+
+			int content_len = esp_http_client_get_content_length(client);
+
 		   ESP_LOGI(TAG, "Status = %d, content_length = %d",
 				   esp_http_client_get_status_code(client),
-				   esp_http_client_get_content_length(client));
+				   content_len);
 
-		   esp_http_client_read(client, buffer_res, 100);
 
-		   printf("%s", buffer_res);
+
+		   printf("Response\n");
+		   printf("%s\n", local_response_buffer);
+
+		   for(int i = 0; i < 2000; i++)
+		   {
+			   local_response_buffer[i] = 0;
+		   }
 
 		}
 		esp_http_client_cleanup(client);
@@ -335,7 +377,7 @@ void app_main(void)
     xTaskCreatePinnedToCore(  // Use xTaskCreate() in vanilla FreeRTOS
     		     getJSON,  // Function to be called
                 "Get Response",   // Name of task
-                4096,         // Stack size (bytes in ESP32, words in FreeRTOS)
+                1024 * 10,         // Stack size (bytes in ESP32, words in FreeRTOS)
                 NULL,         // Parameter to pass to function
                 0,            // Task priority (0 to configMAX_PRIORITIES - 1)
                 NULL,         // Task handle
