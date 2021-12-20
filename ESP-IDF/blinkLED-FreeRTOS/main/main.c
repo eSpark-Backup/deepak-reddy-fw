@@ -12,9 +12,13 @@
 #include "esp_sntp.h"
 #include "string.h"
 #include "stdlib.h"
+#include "cJSON.h"
+#include "esp_spiffs.h"
 
 
-#define led_pin GPIO_NUM_2
+#define led_pin GPIO_NUM_4
+#define Relay1 5
+#define Relay2 2
 
 static const int rate_1 = 500;  // ms
 static const int rate_2 = 323;  // ms
@@ -36,13 +40,18 @@ static const char *TAG = "wifi station";
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 
-#define EXAMPLE_ESP_WIFI_SSID      "DevSol Pakistan"
-#define EXAMPLE_ESP_WIFI_PASS      "47356880"
+#define EXAMPLE_ESP_WIFI_SSID      "KALBEABBAS 1096"
+#define EXAMPLE_ESP_WIFI_PASS      "UsmaneSpark"
 #define EXAMPLE_ESP_MAXIMUM_RETRY  5
 
 static int s_retry_num = 0;
 extern const char ca_cert_pem_start[] asm("_binary_ca_cert_pem_start");
 extern const char ca_cert_pem_end[]   asm("_binary_ca_cert_pem_end");
+
+SemaphoreHandle_t xSemaphore = NULL;
+
+double epoch = 0;
+int dur = 0;
 
 
 static void obtain_time(void);
@@ -220,7 +229,7 @@ esp_err_t _http_event_handle(esp_http_client_event_t *evt)
         case HTTP_EVENT_ON_FINISH:
             ESP_LOGI(TAG, "HTTP_EVENT_ON_FINISH");
             output_len = 0;
-            printf("%s\n", (char *)evt->user_data);
+
             break;
         case HTTP_EVENT_DISCONNECTED:
             ESP_LOGI(TAG, "HTTP_EVENT_DISCONNECTED");
@@ -230,48 +239,334 @@ esp_err_t _http_event_handle(esp_http_client_event_t *evt)
     return ESP_OK;
 }
 
+int getToday(char* today)
+{
+	int w_day = 0;
+	if(strncmp(today, "Monday", 6) == 0)
+	{
+		w_day = 1;
+	}else if(strncmp(today, "Tuesday", 7) == 0)
+	{
+		w_day = 2;
+	}else if(strncmp(today, "Wednesday", 9) == 0)
+	{
+		w_day = 3;
+	}else if(strncmp(today, "Thursday", 8) == 0)
+	{
+		w_day = 4;
+	}else if(strncmp(today, "Friday", 6) == 0)
+	{
+		w_day = 5;
+	}else if(strncmp(today, "Saturday", 8) == 0)
+	{
+		w_day = 6;
+	}else if(strncmp(today, "Sunday", 6) == 0)
+	{
+		w_day = 0;
+	}else{
+		w_day = -1;
+	}
+
+	return w_day;
+}
+
+void getSchedule(double* epoch, int * dur, int w_day)
+{
+    esp_vfs_spiffs_conf_t conf = {
+      .base_path = "/spiffs",
+      .partition_label = NULL,
+      .max_files = 5,
+      .format_if_mount_failed = true
+    };
+
+    // Use settings defined above to initialize and mount SPIFFS filesystem.
+    // Note: esp_vfs_spiffs_register is an all-in-one convenience function.
+    esp_err_t ret = esp_vfs_spiffs_register(&conf);
+
+    if (ret != ESP_OK) {
+        if (ret == ESP_FAIL) {
+            ESP_LOGE(TAG, "Failed to mount or format filesystem");
+        } else if (ret == ESP_ERR_NOT_FOUND) {
+            ESP_LOGE(TAG, "Failed to find SPIFFS partition");
+        } else {
+            ESP_LOGE(TAG, "Failed to initialize SPIFFS (%s)", esp_err_to_name(ret));
+        }
+        return;
+    }
+
+    ESP_LOGI(TAG, "Reading file");
+    FILE* f = fopen("/spiffs/schedule.txt", "r");
+    if (f == NULL) {
+        ESP_LOGE(TAG, "Failed to open file for reading");
+        return;
+    }
+
+    char line[2000];
+	fread(line, sizeof(line), 1, f);
+
+
+    fclose(f);
+
+
+    ESP_LOGI(TAG, "Read from file: '%s'", line);
+
+    // All done, unmount partition and disable SPIFFS
+    esp_vfs_spiffs_unregister(conf.partition_label);
+    ESP_LOGI(TAG, "SPIFFS unmounted");
+
+    cJSON* parse_json = cJSON_Parse(line);
+
+    if (parse_json == NULL)
+    {
+    	printf("Error parse_json\n");
+    }
+
+    cJSON* schedule = cJSON_GetObjectItem(parse_json, "Schedule");
+
+    int array_size = cJSON_GetArraySize(schedule);
+    printf("array size %d\n", array_size);
+
+    for(int i = 0; i < array_size; i++)
+    {
+    	cJSON* array = cJSON_GetArrayItem(schedule, i);
+        if (array == NULL)
+        {
+        	printf("Error array\n");
+        }
+
+    	cJSON* day = cJSON_GetObjectItem(array, "Day");
+        if (day == NULL)
+        {
+        	printf("Error day\n");
+        }
+
+        char* today = day->valuestring;
+    	printf("Day %s\n", today);
+    	if(getToday(today) == w_day)
+    	{
+    		*epoch = (cJSON_GetObjectItem(array, "Start Time(epoch)")->valuedouble);
+    		*dur = cJSON_GetObjectItem(array, "Duration(minutes)")->valueint;
+
+    		break;
+    	}
+    }
+}
+
+void storeToSPIFFS(char* string)
+{
+    ESP_LOGI(TAG, "Initializing SPIFFS");
+
+    esp_vfs_spiffs_conf_t conf = {
+      .base_path = "/spiffs",
+      .partition_label = NULL,
+      .max_files = 5,
+      .format_if_mount_failed = true
+    };
+
+    // Use settings defined above to initialize and mount SPIFFS filesystem.
+    // Note: esp_vfs_spiffs_register is an all-in-one convenience function.
+    esp_err_t ret = esp_vfs_spiffs_register(&conf);
+
+    if (ret != ESP_OK) {
+        if (ret == ESP_FAIL) {
+            ESP_LOGE(TAG, "Failed to mount or format filesystem");
+        } else if (ret == ESP_ERR_NOT_FOUND) {
+            ESP_LOGE(TAG, "Failed to find SPIFFS partition");
+        } else {
+            ESP_LOGE(TAG, "Failed to initialize SPIFFS (%s)", esp_err_to_name(ret));
+        }
+        return;
+    }
+
+    // Use POSIX and C standard library functions to work with files.
+    // First create a file.
+    ESP_LOGI(TAG, "Opening file");
+    FILE* f = fopen("/spiffs/schedule.txt", "w");
+    if (f == NULL) {
+        ESP_LOGE(TAG, "Failed to open file for writing");
+        return;
+    }
+
+    fprintf(f, string);
+    fclose(f);
+    ESP_LOGI(TAG, "File written");
+
+
+//    // Open schedule.txt file for reading
+//    ESP_LOGI(TAG, "Reading file");
+//    f = fopen("/spiffs/schedule.txt", "r");
+//    if (f == NULL) {
+//        ESP_LOGE(TAG, "Failed to open file for reading");
+//        return;
+//    }
+//
+//    char line[2000];
+//	fread(line, sizeof(line), 1, f);
+//
+//
+//    fclose(f);
+//
+//    ESP_LOGI(TAG, "Read from file: '%s'", line);
+//
+    // All done, unmount partition and disable SPIFFS
+    esp_vfs_spiffs_unregister(conf.partition_label);
+    ESP_LOGI(TAG, "SPIFFS unmounted");
+//
+//    cJSON* parse_json = cJSON_Parse(line);
+//
+//    if (parse_json == NULL)
+//    {
+//    	printf("Error parse_json\n");
+//    }
+//
+//    cJSON* schedule = cJSON_GetObjectItem(parse_json, "Schedule");
+//
+//    int array_size = cJSON_GetArraySize(schedule);
+//    printf("array size %d\n", array_size);
+//
+//    for(int i = 0; i < array_size; i++)
+//    {
+//    	cJSON* array = cJSON_GetArrayItem(schedule, i);
+//        if (array == NULL)
+//        {
+//        	printf("Error array\n");
+//        }
+//
+//    	cJSON* day = cJSON_GetObjectItem(array, "Day");
+//        if (day == NULL)
+//        {
+//        	printf("Error day\n");
+//        }
+//
+//    	printf("Day %s\n", day->valuestring);
+//    }
+
+//    cJSON* schedule = cJSON_GetObjectItem(parse_json, "Schedule");
+//    if (schedule == NULL)
+//    {
+//    	printf("Error in schedule JSON\n");
+//    }
+//
+//    cJSON* schedule1 = cJSON_GetObjectItem(schedule, "Schdule01");
+//    if (schedule1 == NULL)
+//    {
+//    	printf("Error in schedule1 JSON\n");
+//    }
+//
+//    cJSON* day = cJSON_GetObjectItem(schedule1, "Day");
+//    if (day == NULL)
+//    {
+//    	printf("Error in Day JSON\n");
+//    }
+//
+//    printf("Day: %s\n", day->valuestring);
+
+
+//    cJSON* childJSON = NULL;
+//    cJSON* schedule1 = NULL;
+//    cJSON* schedule1_child = NULL;
+//    cJSON* schedule1_day = NULL;
+//
+//    childJSON = schedule->child;
+//    if (childJSON == NULL)
+//    {
+//        const char *error_ptr = cJSON_GetErrorPtr();
+//        if (error_ptr != NULL)
+//        {
+//            printf("Error: %s\n", error_ptr);
+//        }
+//    }
+//
+//    schedule1 = cJSON_GetObjectItem(childJSON,"Schdule01");
+//    if (schedule1 == NULL)
+//    {
+//        const char *error_ptr = cJSON_GetErrorPtr();
+//        if (error_ptr != NULL)
+//        {
+//            printf("Error: %s\n", error_ptr);
+//        }
+//    }
+//
+//    schedule1_child = schedule1->child;
+//    if (schedule1_child == NULL)
+//    {
+//        const char *error_ptr = cJSON_GetErrorPtr();
+//        if (error_ptr != NULL)
+//        {
+//            printf("Error: %s\n", error_ptr);
+//        }
+//    }
+//
+//    schedule1_day = cJSON_GetObjectItem(schedule1_child, "Day");
+//    if (schedule1_day == NULL)
+//    {
+//        const char *error_ptr = cJSON_GetErrorPtr();
+//        if (error_ptr != NULL)
+//        {
+//            printf("Error: %s\n", error_ptr);
+//        }
+//    }
+//
+//    printf("Parsed string %s\n", schedule1_day->valuestring);
+
+
+
+
+
+}
+
 void getJSON()
 {
 	while(1)
 	{
-	    static char local_response_buffer[2000] = {0};
+		if(xSemaphore != NULL)
+		{
+			if(xSemaphoreTake(xSemaphore, (TickType_t) (10000 / portTICK_PERIOD_MS)) == pdTRUE)
+			{
+				char local_response_buffer[2000] = {0};
 
-	    esp_http_client_config_t config = {
-	        .url = "https://esp-idf-bucket.s3.us-west-1.amazonaws.com/hello.txt",
-	        .event_handler = _http_event_handle,
-	        .cert_pem = ca_cert_pem_start,
-			.method = HTTP_METHOD_GET,
-			.user_data = local_response_buffer,
-			.buffer_size = 1024,
-	    };
+				esp_http_client_config_t config = {
+					.url = "https://esp-idf-bucket.s3.us-west-1.amazonaws.com/schedule.json",
+					.event_handler = _http_event_handle,
+					.cert_pem = ca_cert_pem_start,
+					.method = HTTP_METHOD_GET,
+					.user_data = local_response_buffer,
+					.buffer_size = 1024,
+				};
 
-		esp_http_client_handle_t client = esp_http_client_init(&config);
-	    //esp_err_t err = esp_http_client_open(client, 0);
+				esp_http_client_handle_t client = esp_http_client_init(&config);
+				//esp_err_t err = esp_http_client_open(client, 0);
 
-		esp_err_t err = esp_http_client_perform(client);
+				esp_err_t err = esp_http_client_perform(client);
 
-		if (err == ESP_OK) {
+				if (err == ESP_OK) {
 
-			int content_len = esp_http_client_get_content_length(client);
+					int content_len = esp_http_client_get_content_length(client);
 
-		   ESP_LOGI(TAG, "Status = %d, content_length = %d",
-				   esp_http_client_get_status_code(client),
-				   content_len);
+				   ESP_LOGI(TAG, "Status = %d, content_length = %d",
+						   esp_http_client_get_status_code(client),
+						   content_len);
 
 
+				   storeToSPIFFS(local_response_buffer);
 
-		   printf("Response\n");
-		   printf("%s\n", local_response_buffer);
 
-		   for(int i = 0; i < 2000; i++)
-		   {
-			   local_response_buffer[i] = 0;
-		   }
+				   printf("Response\n");
+				   //printf("%s\n", local_response_buffer);
 
+				   for(int i = 0; i < 2000; i++)
+				   {
+					   local_response_buffer[i] = 0;
+				   }
+
+				}
+				esp_http_client_cleanup(client);
+
+				xSemaphoreGive(xSemaphore);
+
+				vTaskDelay(10000 / portTICK_PERIOD_MS);
+			}
 		}
-		esp_http_client_cleanup(client);
-
-		vTaskDelay(5000 / portTICK_PERIOD_MS);
 	}
 
 }
@@ -280,31 +575,71 @@ void getTime()
 {
 	while(1)
 	{
-	    char strftime_buf[64];
+		if(xSemaphore != NULL)
+		{
+			if(xSemaphoreTake(xSemaphore, (TickType_t)(10000 / portTICK_PERIOD_MS)) == pdTRUE)
+			{
+				//char strftime_buf[64];
 
-		printf("Update Time\n");
-	    time_t now;
-	    struct tm timeinfo;
-	    time(&now);
-	    localtime_r(&now, &timeinfo);
+				printf("Update Time\n");
+				time_t now;
+				struct tm timeinfo;
+				time(&now);
+				localtime_r(&now, &timeinfo);
 
-	    obtain_time();
-	    // update 'now' variable with current time
-	    time(&now);
+				obtain_time();
+				// update 'now' variable with current time
+				time(&now);
 
-	    ESP_LOGI(TAG, "Year = %d, Month = %d, Day = %d", timeinfo.tm_year, timeinfo.tm_mon, timeinfo.tm_mday);
+				ESP_LOGI(TAG, "Year = %d, Month = %d, Day = %d", timeinfo.tm_year, timeinfo.tm_mon, timeinfo.tm_wday);
+				ESP_LOGI(TAG, "EPOCH = %ld", now);
 
-	    // Set timezone and print local time
-	    setenv("TZ", "UTC-5", 1);
-	    tzset();
-	    localtime_r(&now, &timeinfo);
-	    strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
-	    ESP_LOGI(TAG, "The current date/time in Pakistan is: %s", strftime_buf);
+				int w_day = timeinfo.tm_wday;
 
-		vTaskDelay(10000 / portTICK_PERIOD_MS);
+				// Set timezone and print local time
+		//	    setenv("TZ", "UTC-5", 1);
+		//	    tzset();
+		//	    localtime_r(&now, &timeinfo);
+		//	    strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
+		//	    ESP_LOGI(TAG, "The current date/time in Pakistan is: %s", strftime_buf);
+
+				getSchedule(&epoch, &dur, w_day);
+
+				xSemaphoreGive(xSemaphore);
+
+				vTaskDelay(10000 / portTICK_PERIOD_MS);
+			}
+		}
 	}
 
 }
+
+void executeSchedule()
+{
+	while(1)
+	{
+		time_t now;
+		time(&now);
+
+		printf("Epoch: %lf, Dur: %d", epoch, dur);
+
+		if((now >= epoch) && (now < (epoch + dur * 60)))
+		{
+			printf("\nActuate relays\n");
+
+	        gpio_set_level(Relay1, 1);
+	        gpio_set_level(Relay2, 1);
+		}else{
+			printf("\nOut of schedule\n");
+
+	        gpio_set_level(Relay1, 0);
+	        gpio_set_level(Relay2, 0);
+		}
+
+		vTaskDelay(1000 / portTICK_PERIOD_MS);
+	}
+}
+
 
 static void obtain_time(void)
 {
@@ -321,10 +656,10 @@ static void obtain_time(void)
     time_t now = 0;
     struct tm timeinfo = { 0 };
     int retry = 0;
-    const int retry_count = 10;
+    const int retry_count = 3;
     while (sntp_get_sync_status() == SNTP_SYNC_STATUS_RESET && ++retry < retry_count) {
         ESP_LOGI(TAG, "Waiting for system time to be set... (%d/%d)", retry, retry_count);
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
     time(&now);
     localtime_r(&now, &timeinfo);
@@ -353,7 +688,6 @@ void app_main(void)
 {
     nvs_flash_init();
 
-
     wifi_init_sta();
 
     esp_netif_init();
@@ -362,7 +696,16 @@ void app_main(void)
 
     gpio_set_direction(led_pin, GPIO_MODE_OUTPUT);
 
+    xSemaphore = xSemaphoreCreateBinary();
 
+    xSemaphoreGive(xSemaphore);
+
+
+    gpio_reset_pin(Relay1);
+    gpio_reset_pin(Relay2);
+
+    gpio_set_direction(Relay1, GPIO_MODE_OUTPUT);
+    gpio_set_direction(Relay2, GPIO_MODE_OUTPUT);
 
     // Task to run forever
     xTaskCreatePinnedToCore(  // Use xTaskCreate() in vanilla FreeRTOS
@@ -376,21 +719,30 @@ void app_main(void)
 
     xTaskCreatePinnedToCore(  // Use xTaskCreate() in vanilla FreeRTOS
     		     getJSON,  // Function to be called
-                "Get Response",   // Name of task
+                "Get Schedule",   // Name of task
                 1024 * 10,         // Stack size (bytes in ESP32, words in FreeRTOS)
                 NULL,         // Parameter to pass to function
                 0,            // Task priority (0 to configMAX_PRIORITIES - 1)
                 NULL,         // Task handle
                 app_cpu);     // Run on one core for demo purposes (ESP32 only)
 
-    /*xTaskCreatePinnedToCore(  // Use xTaskCreate() in vanilla FreeRTOS
+    xTaskCreatePinnedToCore(  // Use xTaskCreate() in vanilla FreeRTOS
     		     getTime,  // Function to be called
                 "Get Time",   // Name of task
+                1024 * 4,         // Stack size (bytes in ESP32, words in FreeRTOS)
+                NULL,         // Parameter to pass to function
+                0,            // Task priority (0 to configMAX_PRIORITIES - 1)
+                NULL,         // Task handle
+                app_cpu);     // Run on one core for demo purposes (ESP32 only)
+
+    xTaskCreatePinnedToCore(  // Use xTaskCreate() in vanilla FreeRTOS
+    		     executeSchedule,  // Function to be called
+                "ExecuteSchedule",   // Name of task
                 1024 * 2,         // Stack size (bytes in ESP32, words in FreeRTOS)
                 NULL,         // Parameter to pass to function
                 0,            // Task priority (0 to configMAX_PRIORITIES - 1)
                 NULL,         // Task handle
-                app_cpu);     // Run on one core for demo purposes (ESP32 only)*/
+                app_cpu);     // Run on one core for demo purposes (ESP32 only)
 
     // Task to run forever
 //    xTaskCreatePinnedToCore(  // Use xTaskCreate() in vanilla FreeRTOS

@@ -1,0 +1,59 @@
+{
+	"Schedule": [{
+			"Channel ID": 100,
+			"Day": "Monday",
+			"Start Time(epoch)": 1625000013,
+			"Duration(minutes)": 5,
+			"ConfigON": 1121,
+			"ConfigOFF": 1020
+		},
+		{
+			"Channel ID": 100,
+			"Day": "Tuesday",
+			"Start Time(epoch)": 1625203014,
+			"Duration(minutes)": 61,
+			"ConfigON": 1121,
+			"ConfigOFF": 1020
+		},
+		{
+			"Channel ID": 100,
+			"Day": "Wednesday",
+			"Start Time(epoch)": 1625203015,
+			"Duration(minutes)": 62,
+			"ConfigON": 1121,
+			"ConfigOFF": 1020
+		},
+		{
+			"Channel ID": 100,
+			"Day": "Thursday",
+			"Start Time(epoch)": 1625203016,
+			"Duration(minutes)": 63,
+			"ConfigON": 1121,
+			"ConfigOFF": 1020
+		},
+		{
+			"Channel ID": 100,
+			"Day": "Friday",
+			"Start Time(epoch)": 1639749360,
+			"Duration(minutes)": 5,
+			"ConfigON": 1121,
+			"ConfigOFF": 1020
+		},
+		{
+			"Channel ID": 100,
+			"Day": "Saturday",
+			"Start Time(epoch)": 1625203018,
+			"Duration(minutes)": 65,
+			"ConfigON": 1121,
+			"ConfigOFF": 1020
+		},
+		{
+			"Channel ID": 100,
+			"Day": "Sunday",
+			"Start Time(epoch)": 1625203019,
+			"Duration(minutes)": 66,
+			"ConfigON": 1121,
+			"ConfigOFF": 1020
+		}
+	]
+}
